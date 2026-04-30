@@ -49,18 +49,22 @@ def is_common_stock(symbol_row: Dict) -> bool:
     symbol = symbol_row.get("symbol", "")
     description = symbol_row.get("description", "").upper()
     stock_type = symbol_row.get("type", "").upper()
+    mic = symbol_row.get("mic", "").upper()
 
+    allowed_exchanges = {"XNYS", "XNAS", "XASE"}
     bad_symbol_parts = [".", "-", "/", "^", "="]
     bad_words = [
         "ETF", "ETN", "FUND", "TRUST", "WARRANT", "RIGHT", "UNIT", "PREFERRED",
         "PREF", "ADR", "NOTE", "BOND", "INDEX", "SPAC", "ACQUISITION CORP WT",
     ]
 
+    if mic and mic not in allowed_exchanges:
+        return False
     if not symbol or any(part in symbol for part in bad_symbol_parts):
         return False
     if len(symbol) > 5:
         return False
-    if stock_type and stock_type not in ["COMMON STOCK", "", "EQS"]:
+    if stock_type and stock_type.upper() != "COMMON STOCK":
         return False
     if any(word in description for word in bad_words):
         return False
@@ -142,8 +146,7 @@ def debug(symbol: str):
     return {"symbol": symbol.upper(), "quote": quote, "news_count_today": len(news), "relative_volume": relvol}
 
 
-@app.post("/load-universe")
-def load_universe(exchange: str = Query("US")):
+def load_universe_impl(exchange: str = "US"):
     global UNIVERSE
     data = finnhub_get("/stock/symbol", {"exchange": exchange})
     if not isinstance(data, list):
@@ -154,25 +157,32 @@ def load_universe(exchange: str = Query("US")):
         "total_symbols": len(UNIVERSE),
         "symbols_scanned": 0,
         "matches_found": len(MATCHES),
-        "message": f"Loaded {len(UNIVERSE)} common-stock-like U.S. symbols.",
+        "message": f"Loaded {len(UNIVERSE)} common U.S. exchange symbols.",
     })
     return {"status": "ok", "total_symbols": len(UNIVERSE), "sample": UNIVERSE[:10]}
 
 
-@app.post("/scan")
-def run_scan(
-    start: int = Query(0),
-    limit: int = Query(50),
-    min_price: float = Query(3),
-    max_price: float = Query(20),
-    min_change: float = Query(20),
-    min_relative_volume: float = Query(5),
-    require_news: bool = Query(True),
+@app.get("/load-universe")
+@app.post("/load-universe")
+def load_universe(exchange: str = Query("US")):
+    return load_universe_impl(exchange)
+
+
+def run_scan_impl(
+    start: int = 0,
+    limit: int = 50,
+    min_price: float = 3,
+    max_price: float = 20,
+    min_change: float = 20,
+    min_relative_volume: float = 5,
+    require_news: bool = True,
 ):
     global MATCHES
 
     if not API_KEY:
         return {"status": "error", "message": "FINNHUB_API_KEY is missing in Render."}
+    if not UNIVERSE:
+        load_universe_impl("US")
     if not UNIVERSE:
         return {"status": "error", "message": "Universe is empty. Call /load-universe first."}
 
@@ -256,6 +266,20 @@ def run_scan(
         "matches_found_total": len(MATCHES),
         "debug_sample": inspected[:10],
     }
+
+
+@app.get("/scan")
+@app.post("/scan")
+def run_scan(
+    start: int = Query(0),
+    limit: int = Query(50),
+    min_price: float = Query(3),
+    max_price: float = Query(20),
+    min_change: float = Query(20),
+    min_relative_volume: float = Query(5),
+    require_news: bool = Query(True),
+):
+    return run_scan_impl(start, limit, min_price, max_price, min_change, min_relative_volume, require_news)
 
 
 @app.get("/scan/status")
