@@ -22,7 +22,7 @@ def debug(symbol: str):
     return r.json()
 
 @app.get("/stocks")
-def stocks():
+def stocks(min_price: float = 0, max_price: float = 10000, min_change: float = -100):
     symbols = ["AAPL","TSLA","NVDA","AMD","PLTR"]
 
     results = []
@@ -34,10 +34,13 @@ def stocks():
         ).json()
 
         if r.get("c"):
-            results.append({
-                "symbol": s,
-                "price": r["c"],
-                "change": ((r["c"] - r["pc"]) / r["pc"]) * 100 if r["pc"] else 0
-            })
+            change = ((r["c"] - r["pc"]) / r["pc"]) * 100 if r["pc"] else 0
+
+            if min_price <= r["c"] <= max_price and change >= min_change:
+                results.append({
+                    "symbol": s,
+                    "price": r["c"],
+                    "change": change
+                })
 
     return results
